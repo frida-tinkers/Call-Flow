@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call web</title>
+<style>
+  :root {
+    --bg: #fbfdf9;
+    --ink: #1f3a14;
+    --yes: #8fc46a;
+    --yes-soft: #e6f3da;
+    --yes-done: #b9de9c;
+    --no: #e0925f;
+    --no-soft: #fbe8dd;
+    --no-done: #f3c7a8;
+    --ghost: #b9c4b0;
+    --muted: #5d7350;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101a0c;
+      --ink: #e4f3d8;
+      --yes: #86bd62;
+      --yes-soft: #1c2d14;
+      --yes-done: #2f5120;
+      --no: #e39a73;
+      --no-soft: #3a2418;
+      --no-done: #6b3f25;
+      --ghost: #4a5a42;
+      --muted: #9db88c;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .tools { position: fixed; top: 10px; right: 10px; z-index: 5; display: flex; gap: 8px; }
+  .tools button {
+    background: var(--bg); color: var(--ink); border: 2px solid var(--yes);
+    border-radius: 999px; padding: 6px 14px; font: inherit; font-size: .9rem; cursor: pointer;
+  }
+  #web { max-width: 460px; margin: 0 auto; padding: 56px 14px 160px; }
+
+  .internal {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    margin: 0 0 18px; padding: 10px 14px; min-height: 48px;
+    background: var(--bg); color: inherit; font: inherit; font-size: .95rem; text-align: left;
+    border: 3px dashed var(--yes); border-radius: 14px; cursor: pointer;
+  }
+  .internal .box {
+    flex: none; width: 24px; height: 24px; border: 3px solid var(--yes); border-radius: 7px; position: relative;
+  }
+  .internal[aria-pressed="true"] { background: var(--yes-done); border-style: solid; }
+  .internal[aria-pressed="true"] .box { background: var(--yes); }
+  .internal[aria-pressed="true"] .box::after {
+    content: ""; position: absolute; left: 6px; top: 1px; width: 6px; height: 12px;
+    border: solid var(--bg); border-width: 0 3px 3px 0; transform: rotate(45deg);
+  }
+  .internal:disabled { opacity: .45; cursor: default; }
+
+  svg.link { display: block; width: 100%; height: 30px; overflow: visible; }
+  svg.link path { fill: none; stroke-width: 5; stroke-linecap: round; vector-effect: non-scaling-stroke; stroke: var(--yes); }
+  svg.link.no path { stroke: var(--no); }
+  svg.link.ghost path { stroke: var(--ghost); stroke-dasharray: 2 9; opacity: .8; }
+
+  .node {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    text-align: center; width: 100%; min-height: 80px; padding: 14px 18px;
+    border: 5px solid var(--yes); background: var(--yes-soft); color: inherit;
+    border-radius: 34px; font: inherit;
+  }
+  .node .t { font-size: 1.08rem; line-height: 1.25; font-weight: 600; letter-spacing: .005em; }
+  .node .s { font-size: .82rem; line-height: 1.35; color: var(--muted); font-weight: 400; }
+  button.node { cursor: pointer; }
+  button.node:disabled { cursor: default; }
+  .node.no { border-color: var(--no); background: var(--no-soft); }
+  .node.done { background: var(--yes-done); }
+  .node.no.done { background: var(--no-done); }
+  .node.current { background: var(--bg); box-shadow: 0 0 0 4px color-mix(in srgb, var(--yes) 35%, transparent); }
+  .node.no.current { box-shadow: 0 0 0 4px color-mix(in srgb, var(--no) 35%, transparent); }
+  .node.ghost { border: 4px dashed var(--ghost); background: transparent; opacity: .55; min-height: 66px; }
+  .node.ghost .t { font-size: 1rem; }
+  .node.end { border-style: dashed; }
+
+  .cellw { width: 62%; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4%; }
+  .picks { display: grid; gap: 8px; }
+  .pick {
+    min-height: 56px; width: 100%; padding: 6px 8px; font: inherit; font-size: 1rem; font-weight: 600; color: inherit;
+    border: 5px solid var(--yes); background: var(--bg); border-radius: 28px; cursor: pointer;
+  }
+  .pick.no { border-color: var(--no); }
+  .pick.chosen { background: var(--yes-done); }
+  .pick.no.chosen { background: var(--no-done); }
+  .pick.unchosen { opacity: .4; }
+  .pick:disabled { cursor: default; }
+
+  button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+</style>
+</head>
+<body>
+<div class="tools">
+  <button id="undo" type="button">Undo</button>
+  <button id="restart" type="button">Restart</button>
+</div>
+<main id="web"></main>
+
+<script>
+/* ---- The whole call web lives here. ----
+   text:    the bubble's main words
+   say:     small script line under it (optional)
+   next:    the bubble that appears when you tap this one
+   choices: makes it a question. Each choice = { label, to, tone } (tone "no" = orange)
+   skipIf:  skipped entirely when that switch at the top is on
+   end:     tapping it starts the next call                                              */
+const NODES = {
+  start:   { text: "Greeting + Dexcom + your name", say: "“Thanks for calling Dexcom, my name is Frida. How can I help you?” (open-ended)", next: "empathy" },
+  empathy: { text: "Empathize", say: "“I'm sorry to hear that” / “I'll be more than happy to help you”", next: "hipaa" },
+  hipaa:   { text: "HIPAA verified", say: "“Before we begin, can I please have your name and date of birth?”", next: "patient", skipIf: "internal" },
+
+  patient: { text: "Am I speaking with the patient?",
+             choices: [ { label: "YES", to: "profile" }, { label: "NO", to: "reporter", tone: "no" } ] },
+  reporter:{ text: "Verify or add reporter", next: "profile" },
+
+  profile: { text: "Profile info complete?",
+             choices: [ { label: "YES", to: "readings" }, { label: "NO", to: "fillProfile", tone: "no" } ] },
+  fillProfile: { text: "Fill out profile questions",
+                 say: "“Thank you. I see some information is missing from your profile, and I need to complete it before we continue. It'll only take a moment.”",
+                 next: "readings" },
+
+  readings:{ text: "How do you get your readings?",
+             choices: [ { label: "Phone / App", to: "serialApp" }, { label: "Pump", to: "pumpTransfer" }, { label: "Receiver", to: "serialRcv" } ] },
+
+  serialApp:{ text: "Do they have the serial number?",
+              choices: [ { label: "YES", to: "tsg" }, { label: "NO", to: "inqApp", tone: "no" } ] },
+  inqApp:  { text: "Search Inquisito", say: "If they know approximate dates", next: "tsg" },
+
+  serialRcv:{ text: "Do they have the serial number?",
+              choices: [ { label: "YES", to: "tsg" }, { label: "NO", to: "inqRcv", tone: "no" } ] },
+  inqRcv:  { text: "Can't find it on Inquisito", say: "Receiver with no serial number", next: "tsg" },
+
+  pumpTransfer:{ text: "Does the issue need to transfer to the partner?",
+                 choices: [ { label: "YES", to: "offerPhone" }, { label: "NO", to: "tsgDoc", tone: "no" } ] },
+  offerPhone:{ text: "Offer the phone number first", say: "Proactively offer it before transferring", next: "end" },
+  tsgDoc:  { text: "Continue documenting Dexcom TSG", next: "tsg" },
+
+  tsg:     { text: "TSG code decided", say: "Now ask the TS questions", next: "replacement" },
+  replacement:{ text: "Moving forward with replacement?",
+                choices: [ { label: "YES", to: "courtesy" }, { label: "NO", to: "noReplace", tone: "no" } ] },
+  courtesy:{ text: "Courtesy replacement",
+             say: "“Since we don't have a serial number, this replacement would be processed as a courtesy replacement. You're eligible for up to 6 courtesy replacements in a 12-month period.”",
+             next: "ship", needs: "inqRcv" },
+  noReplace:{ text: "Resolved / educated on why not moving forward with replacement", next: "exit" },
+  ship:    { text: "Verified email / shipping address", next: "exit" },
+  exit:    { text: "Warm exit", say: "“Thank you for calling Dexcom.”", next: "end" },
+  end:     { text: "Start next call", end: true }
+};
+const START = "start";
+const SWITCHES = { internal: "AUTHENTICATED BY INTERNAL DEPARTMENT" };
+
+const web = document.getElementById("web");
+let path, flags;
+
+const clampX = x => Math.min(69, Math.max(31, x));
+const pickX = (i, n) => ((i + 0.5) / n) * 100;
+const isQ = id => !!NODES[id].choices;
+
+function resolve(id) {                       // skip bubbles whose switch is on
+  while (
+    (NODES[id].skipIf && flags[NODES[id].skipIf]) ||
+    (NODES[id].needs && !path.some(e => e.id === NODES[id].needs))
+  ) id = NODES[id].next;
+  return id;
+}
+function push(targetId, x, fromX, tone) {
+  const id = resolve(targetId);
+  path.push({ id, x: isQ(id) ? 50 : x, fromX, tone: isQ(id) ? "" : tone, done: false, choice: null });
+}
+function reset() {
+  flags = { internal: false };
+  path = [{ id: START, x: 50, fromX: 50, tone: "", done: false, choice: null }];
+}
+
+function tapStep(idx) {
+  const e = path[idx], n = NODES[e.id];
+  if (n.end) { restart(); return; }
+  if (idx !== path.length - 1 || e.done) return;
+  e.done = true;
+  push(n.next, clampX(e.x), e.x, e.tone);
+  render(true);
+}
+
+function tapChoice(idx, ci) {
+  const e = path[idx], n = NODES[e.id];
+  if (idx !== path.length - 1 || e.done) return;
+  const ch = n.choices[ci];
+  e.choice = ci;
+  e.done = true;
+  const px = pickX(ci, n.choices.length);
+  const target = resolve(ch.to);
+  const gridChild = n.choices.length === 2 && !isQ(target);
+  push(ch.to, gridChild ? px : clampX(px), px, ch.tone || "");
+  render(true);
+}
+
+function toggle(name) {
+  if (path.length > 3) return;               // only before the HIPAA spot
+  flags[name] = !flags[name];
+  if (path.length === 3) {                   // re-pick what comes after "Empathize"
+    path.pop();
+    push(NODES.empathy.next, 50, 50, "");
+  }
+  render(false);
+}
+
+function undo() {
+  if (path.length < 2) return;
+  path.pop();
+  const prev = path[path.length - 1];
+  prev.done = false;
+  prev.choice = null;
+  render(false);
+}
+
+/* ----- drawing helpers ----- */
+const NS = "http://www.w3.org/2000/svg";
+function link(x1, x2, kind) {
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "link" + (kind ? " " + kind : ""));
+  svg.setAttribute("viewBox", "0 0 100 30");
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS(NS, "path");
+  p.setAttribute("d", x1 === x2 ? `M ${x1} 0 L ${x2} 30` : `M ${x1} 0 C ${x1} 18, ${x2} 12, ${x2} 30`);
+  svg.appendChild(p);
+  return svg;
+}
+
+function fillNode(el, n) {
+  const t = document.createElement("span");
+  t.className = "t";
+  t.textContent = n.text;
+  el.appendChild(t);
+  if (n.say) {
+    const s = document.createElement("span");
+    s.className = "s";
+    s.textContent = n.say;
+    el.appendChild(s);
+  }
+}
+
+function bubble(e, idx) {
+  const n = NODES[e.id];
+  const isLast = idx === path.length - 1;
+  const cls = "node " + (e.tone || "") + (n.end ? " end" : e.done ? " done" : " current");
+  if (n.choices) {
+    const d = document.createElement("div");
+    d.className = cls;
+    fillNode(d, n);
+    return d;
+  }
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = cls;
+  fillNode(b, n);
+  b.disabled = !n.end && !(isLast && !e.done);
+  b.addEventListener("click", () => tapStep(idx));
+  return b;
+}
+
+function ghost(targetId) {
+  const d = document.createElement("div");
+  d.className = "node ghost";
+  fillNode(d, { text: NODES[targetId].text });
+  return d;
+}
+
+function questionPicks(e, idx) {
+  const n = NODES[e.id], k = n.choices.length;
+  const wrap = document.createElement("div");
+
+  const sv = document.createElementNS(NS, "svg");
+  sv.setAttribute("class", "link");
+  sv.setAttribute("viewBox", "0 0 100 30");
+  sv.setAttribute("preserveAspectRatio", "none");
+  sv.setAttribute("aria-hidden", "true");
+  n.choices.forEach((ch, i) => {
+    const p = document.createElementNS(NS, "path");
+    const x2 = pickX(i, k);
+    p.setAttribute("d", e.x === x2 ? `M ${e.x} 0 L ${x2} 30` : `M ${e.x} 0 C ${e.x} 18, ${x2} 12, ${x2} 30`);
+    p.style.stroke = ch.tone === "no" ? "var(--no)" : "var(--yes)";
+    if (e.choice !== null && e.choice !== i) p.style.opacity = ".35";
+    sv.appendChild(p);
+  });
+  wrap.appendChild(sv);
+
+  const grid = document.createElement("div");
+  grid.className = "picks";
+  grid.style.gridTemplateColumns = `repeat(${k}, 1fr)`;
+  n.choices.forEach((ch, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pick" + (ch.tone === "no" ? " no" : "") +
+      (e.choice === i ? " chosen" : e.choice !== null ? " unchosen" : "");
+    b.textContent = ch.label;
+    b.disabled = e.choice !== null;
+    b.addEventListener("click", () => tapChoice(idx, i));
+    grid.appendChild(b);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+function render(scroll) {
+  web.innerHTML = "";
+
+  // switch at the very top
+  Object.keys(SWITCHES).forEach(name => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "internal";
+    b.setAttribute("aria-pressed", String(flags[name]));
+    b.disabled = path.length > 3;
+    b.innerHTML = '<span class="box"></span><span></span>';
+    b.lastChild.textContent = SWITCHES[name];
+    b.addEventListener("click", () => toggle(name));
+    web.appendChild(b);
+  });
+
+  path.forEach((e, idx) => {
+    const n = NODES[e.id];
+    const prev = path[idx - 1];
+    const afterQ = prev && isQ(prev.id) && prev.choice !== null;
+    const twoWay = afterQ && NODES[prev.id].choices.length === 2 && !n.choices;
+
+    if (twoWay) {
+      // chosen bubble solid; the other answer's bubble faded so the web stays visible
+      const k = prev.choice, other = 1 - k;
+      const grid = document.createElement("div");
+      grid.className = "grid2";
+      const cols = [document.createElement("div"), document.createElement("div")];
+      cols[k].appendChild(link(25 + 50 * k, 25 + 50 * k, e.tone));
+      cols[k].appendChild(bubble(e, idx));
+      cols[other].appendChild(link(25 + 50 * other, 25 + 50 * other, "ghost"));
+      cols[other].appendChild(ghost(resolve(NODES[prev.id].choices[other].to)));
+      cols.forEach(c => grid.appendChild(c));
+      web.appendChild(grid);
+      return;
+    }
+
+    const row = document.createElement("div");
+    if (idx > 0) row.appendChild(link(e.fromX, e.x, e.tone));
+    const cell = document.createElement("div");
+    cell.className = "cellw";
+    cell.style.marginLeft = (e.x - 31) + "%";
+    cell.appendChild(bubble(e, idx));
+    row.appendChild(cell);
+    web.appendChild(row);
+    if (n.choices) web.appendChild(questionPicks(e, idx));
+  });
+
+  if (scroll) web.lastElementChild.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function restart() {
+  reset();
+  render(false);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.getElementById("restart").addEventListener("click", restart);
+document.getElementById("undo").addEventListener("click", undo);
+reset();
+render(false);
+</script>
+</body>
+</html>
