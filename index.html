@@ -119,7 +119,7 @@
    skipIf:  skipped entirely when that switch at the top is on
    end:     tapping it starts the next call                                              */
 const NODES = {
-  start:   { text: "Greeting + Dexcom + your name", say: "“Thanks for calling Dexcom, my name is Frida. How can I help you?” (open-ended)", next: "empathy" },
+  start:   { text: "Greeting + Dexcom + your name", say: "“Thanks for calling Dexcom, my name is ____. How can I help you?” (open-ended)", next: "empathy" },
   empathy: { text: "Empathize", say: "“I'm sorry to hear that” / “I'll be more than happy to help you”", next: "hipaa" },
   hipaa:   { text: "HIPAA verified", say: "“Before we begin, can I please have your name and date of birth?”", next: "patient", skipIf: "internal" },
 
